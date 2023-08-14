@@ -1,0 +1,84 @@
+import psycopg2
+from psycopg2 import errors
+
+"""
+  Write here your databse cred
+"""
+host=db_host,
+port=db_port,
+dbname=db_name,
+user=db_user,
+password=db_password
+
+def table_exists(cursor, schema_name, table_name):
+    # Check if the table exists in the specified schema
+    query = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)"
+    cursor.execute(query, (schema_name, table_name))
+    return cursor.fetchone()[0]
+
+def run_queries():
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password
+        )
+        cursor = conn.cursor()
+
+        column_name = input("Enter the column name: ")
+        column_value1 = input("Enter the first column value: ")
+        zoom_value1 = int(input("Enter the zoom value for the first column value: "))
+        column_value2 = input("Enter the second column value: ")
+        zoom_value2 = int(input("Enter the zoom value for the second column value: "))
+        column_value3 = input("Enter the third column value: ")
+        zoom_value3 = int(input("Enter the zoom value for the third column value: "))
+        table_name = input("Enter the table name: ")
+
+        query1 = "SELECT name FROM meta.local_authority WHERE dno='ukpn';"
+        cursor.execute(query1)
+        las = cursor.fetchall()  # Fetch all rows returned by the query and assign it to 'las'
+        las = [row[0] for row in las]
+
+        query2_template = """ALTER TABLE ukpn_{la}_master.{la}_{table_name}
+                            ADD COLUMN zoom_level INT;"""
+
+        query3_template = """UPDATE ukpn_{la}_master.{la}_{table_name}
+                            SET zoom_level = 
+                            CASE   
+                                WHEN "{column_name}" = '{column_value1}' THEN {zoom_value1}
+                                WHEN "{column_name}" = '{column_value2}' THEN {zoom_value2}
+                                WHEN "{column_name}" = '{column_value3}' THEN {zoom_value3}
+                                ELSE zoom_level
+                            END;"""
+
+        # Execute queries for each la
+        for la in las:
+            if table_exists(cursor, 'ukpn_{}_master'.format(la), '{}_{}'.format(la, table_name)):
+                query2 = query2_template.format(la=la, table_name=table_name)
+                print(query2)
+                try:
+                    cursor.execute(query2)
+                except errors.UndefinedTable as e:
+                    print(f"Ignoring the table creation error: {e}")
+                    continue  # Skip to the next iteration if the table doesn't exist
+
+                query3 = query3_template.format(la=la, table_name=table_name,
+                                                column_name=column_name, column_value1=column_value1, zoom_value1=zoom_value1,
+                                                column_value2=column_value2, zoom_value2=zoom_value2,
+                                                column_value3=column_value3, zoom_value3=zoom_value3)
+                print(query3)
+                cursor.execute(query3)
+
+        conn.commit()
+
+    except psycopg2.Error as e:
+        print("Error executing the query:", e)
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+if __name__ == "__main__":
+    run_queries()
