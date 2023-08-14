@@ -2,7 +2,6 @@ import geopandas as gpd
 import pandas as pd
 import json
 
-
 class Transform:
     def init(self):
         self.s3_helper = None
