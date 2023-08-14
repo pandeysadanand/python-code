@@ -1,0 +1,49 @@
+import pandas as pd
+import psycopg2
+
+
+gdf = pd.read_csv('UKPN_LA_counties.csv')
+values_to_filter = ['East Sussex','Essex','Hertfordshire','Kent','Lincolnshire','Norfolk','Oxfordshire','Suffolk','West Sussex']
+# values_to_filter = ['East Sussex']
+filtered_df = gdf.loc[gdf['ctyua22nm'].isin(values_to_filter)]
+
+host=DB_HOST,
+database=DB_NAME,
+user=DB_USER,
+password=DB_PASSWORD
+
+try:
+    conn = psycopg2.connect(
+        host=DB_HOST,
+        database=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+except psycopg2.Error as e:
+    print("Error: Could not connect to the database.")
+    print(e)
+    exit()
+
+
+cur = conn.cursor()
+
+
+for index, row in filtered_df.iterrows():
+    ctyua22nm_value = row['ctyua22nm']
+    geometry_value = row['geometry']
+
+    
+    update_query = f"UPDATE meta.local_authority SET geometry = '{geometry_value}' WHERE description = '{ctyua22nm_value}';"
+
+    try:
+        cur.execute(update_query)
+        conn.commit()
+        print(f"Geometry updated for {ctyua22nm_value}.")
+    except psycopg2.Error as e:
+        conn.rollback()
+        print(f"Error updating geometry for {ctyua22nm_value}.")
+        print(e)
+
+
+cur.close()
+conn.close()
