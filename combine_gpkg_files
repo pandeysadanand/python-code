@@ -1,0 +1,18 @@
+import geopandas as gpd
+file1_path = "UKPN_LSOA_Bdry.gpkg"
+file2_path = "merged_file.gpkg"
+
+gdf1 = gpd.read_file(file1_path)
+print(gdf1.head()) # Print the first few rows of the GeoDataFrame
+print(gdf1.crs)    # Print the CRS of the GeoDataFrame
+print("=============================================")
+gdf2 = gpd.read_file(file2_path)
+print(gdf2.head()) # Print the first few rows of the GeoDataFrame
+print(gdf2.crs)    # Print the CRS of the GeoDataFrame
+
+
+common_column_name = "LSOA11CD"
+merged_gdf = gdf1.merge(gdf2, on=common_column_name, how="inner")
+
+output_gpkg = "merged_final_file.gpkg"
+merged_gdf.to_file(output_gpkg, driver="GPKG")
