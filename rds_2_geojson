@@ -1,0 +1,131 @@
+import json
+import logging
+from infra_access.s3_helper import S3Helper
+from infra_access.config import Config
+from infra_access.rds_helper import RDSHelper
+import glob
+
+# con = psycopg2.connect(
+# database="postgres",
+# user="ai_dev_rds",
+# password="bvl#nLBi#46143#68RVDv46v#3h#bv#hk",
+# host="dev-rds.cvlxznrgk8ix.eu-west-2.rds.amazonaws.com",
+# port= '5432'
+# )
+# cursor_obj = con.cursor()
+
+class FeatureLight:
+    def __init__(self) -> None:
+        self.config=Config(dno_name='ukpn')
+        self.bucket=self.config.s3_bucket.get('featureservlight')
+        self.s3helper=S3Helper(bucket= self.bucket)
+        self.rds_helper = RDSHelper(dno_name = 'ukpn')
+
+    def get_tables_and_schemas(self,datasets):
+        query = f"""WITH RankedData AS (SELECT t1.table_name,t2.table_schema,t1.dataset_id, ROW_NUMBER() OVER (PARTITION BY t1.name ORDER BY t1.id DESC) AS row 
+                    FROM meta.dataset_meta as t1
+                    JOIN information_schema.columns as t2 ON (t1.schema_name = t2.table_schema and t1.table_name = t2.table_name) where dno='ukpn')
+                    SELECT dataset_id,table_schema,table_name FROM RankedData WHERE  row = 1 and dataset_id not in ('{"','".join(datasets)}') ;"""
+        print("get_tables_and_schemas fetched from rds")
+        response = self.rds_helper.execute_statement(query)
+        return response
+    
+    def get_columns(self,data):
+        print("Getting columns from table")
+        for item in data:
+            dataset_id = item['dataset_id']
+            schema_name = item['table_schema']
+            table_name = item['table_name']
+            query = "SELECT column_name,data_type FROM information_schema.columns WHERE table_name = '{table_name}' and table_schema='{schema_name}' ;"
+            query = query.format(table_name=table_name,schema_name=schema_name)
+            response = self.rds_helper.execute_statement(query)
+            print("Getting columns and datatype from table has been completed")
+            self.process(response,dataset_id, schema_name,table_name)
+
+        
+    def process(self,columns_and_type,dataset_id, schema_name,table_name):
+        print("Processing dataset_id===================== : ",dataset_id)
+        response_dict={}
+        data = {}
+        geometry = None
+        for item in columns_and_type:
+            name = item['column_name']
+           
+            type = item['data_type'].lower()
+            
+            if name != 'geometry':
+                query = """SELECT DISTINCT "{column_name}" FROM {schema_name}.{table_name};"""
+                query = query.format( column_name = name.replace("%","%%"), schema_name=schema_name, table_name=table_name)
+                response = self.rds_helper.execute_statement(query)
+
+                if type == 'character varying' or type == 'text' :
+                    column_value = [str(value[name]) if value[name] is not None and value[name] != 'NULL' else str('-123456') for value in response]
+                    type='string'
+                
+                elif type == 'integer' or type == 'int' or type == 'bigint':
+                    column_value = [value[name] if value[name] is not None and value[name] != 'NULL' else -123456 for value in response]
+                    type='integer'
+            
+                elif type == 'double precision' or type == 'float' :
+                    column_value = [value[name] if value[name] is not None and value[name] != 'NULL' else -123456 for value in response]
+                    type='real'
+
+                elif type == "timestamp with time zone":
+                    column_value = [value[name].strftime("%Y-%m-%d %H:%M:%S") for value in response if value[name] is not None and value[name] != 'NULL']
+                    type='datetime'
+    
+                else:
+                    column_value = [value[name] if value[name] is not None and value[name] != 'NULL' else -123456 for value in response]
+
+                if column_value:
+
+                    column_value = sorted(column_value)
+                    data[name] = {
+                        "type": type,
+                        "data": column_value
+                        }
+
+            else:
+                query = """SELECT distinct GeometryType({column_name}) FROM {schema_name}.{table_name};"""
+                query =query.format(column_name=name,schema_name=schema_name,table_name=table_name)
+                response = self.rds_helper.execute_statement(query)
+                if "polygon" in response[0]['geometrytype'].lower():
+                    geometry = "Multipolygon"
+                else :
+                    geometry=response[0]['geometrytype']
+
+            response_dict={
+                    "data":data,
+                    "geometry": geometry
+                }
+        print("Processing data has been completed")
+        self.create_file_with_dataset_id(response_dict,dataset_id,schema_name)
+
+    def create_file_with_dataset_id(self,response,dataset_id,schema_name):
+        print("Creating file to write data")
+        file = dataset_id+".geojson"
+        with open(file, 'w') as json_file:
+            print("Writing data to the file :",file)
+            json.dump(response, json_file)
+        print("File writing completed")
+        self.upload_to_s3(file,schema_name,dataset_id)    
+    
+    def upload_to_s3(self,file,schema_name,dataset_id):
+        la = schema_name.split('_')[1]
+        print("uploading file to la : ",la)
+        path = f'ukpn/{la}/featureserv/'+ dataset_id+".geojson"
+        # self.s3helper.upload_file(file,path) 
+        print("FIle " ,dataset_id+".geojson ","uploaded to ",la," completed")
+
+    def execute(self):
+        dataset_list=glob.glob("*.geojson")
+        datasets=[ value.split(".geojson")[0] for value in dataset_list ]
+        tables_and_schemas = self.get_tables_and_schemas(datasets)
+        self.get_columns(tables_and_schemas)
+
+# if __name__ == "__main__":
+print("Starting my process please wait...")
+obj = FeatureLight()
+response = obj.execute()
+print("All uploaded successfully to s3")
+logging.info(f"All uploaded successfully to s3")
