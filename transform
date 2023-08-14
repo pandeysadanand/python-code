@@ -1,0 +1,65 @@
+import geopandas as gpd
+import pandas as pd
+import json
+
+
+class Transform:
+    def init(self):
+        self.s3_helper = None
+        self.rds_helper = None
+        self.filename = None
+        self.dataset_hash = 'merged_file'
+    
+    def shp_gpkg(self,name,path_in):
+        gdf = gpd.read_file(path_in, driver='SHP')
+        # columns_list=[]
+        # all_columns=set(gdf.columns)
+        # req_columns=set(['Footprint','Address','Postcode','Class', 'Year','Min_Therm','Max_Therm','Mean_Therm','Stdv_Therm','geometry'])
+        # columns_list=list(all_columns-req_columns)
+        # gdf.drop(columns_list,inplace=True, axis=1)
+        # print(gdf.columns)
+        gdf['geometry'] = gdf['geometry'].set_crs('epsg:27700')
+        gdf['geometry'] = gdf['geometry'].to_crs('epsg:4326')
+        gdf.to_file(name + '.gpkg',driver="GPKG")
+
+    def generate_csv_with_geometry(self):
+        gpkg = gpd.read_file(self.filename)
+        gpkg.to_csv(self.dataset_hash+'.csv')
+        # self.se_helper.put_object()
+
+    def generate_geojson_with_geometry(self):
+        gpkg = gpd.read_file(self.filename)
+        gpkg.to_file(self.dataset_hash + '.geojson',driver='GeoJSON')
+
+        # self.se_helper.put_object()
+
+    def generate_csv_without_geoms(self):
+        df = pd.read_csv(self.dataset_hash + '.csv')
+        df.drop(columns=['geometry'],inplace=True)
+        df.to_csv(self.dataset_hash + '.csv')
+
+    def generate_geojson_without_geoms(self):
+        with open(self.dataset_hash + '.geojson', 'r+') as f:
+            data = f.read()
+            data = json.loads(data)
+        geom_type = data['features'][0]['geometry']['type']
+        for i in range(len(data['features'])):
+            data['features'][i]['geometry'] = {"type": geom_type, "coordinates":[]}
+
+        with open(self.dataset_hash + '.geojson', 'w') as f:
+            f.write(json.dumps(data))
+
+    def execute(self,filename,h):
+        self.filename = filename
+        self.dataset_hash = h
+        # self.generate_csv_with_geometry()
+        self.generate_geojson_with_geometry()
+        # self.generate_csv_without_geoms()
+        self.generate_geojson_without_geoms()
+
+if __name__== '__main__':
+    obj=Transform()
+    name='input'
+    path_in='Banbury_Solar-EPC-Thermal-GSHP.shp'
+    # obj.shp_gpkg(name,path_in)
+    obj.execute(name+".gpkg",name)
