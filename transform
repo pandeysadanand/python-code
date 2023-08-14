@@ -49,13 +49,26 @@ class Transform:
         with open(self.dataset_hash + '.geojson', 'w') as f:
             f.write(json.dumps(data))
 
+    def drop_col_from_gpkg(self):
+        gpkg_file = self.filename
+        gdf = gpd.read_file(gpkg_file)
+        # columns_to_drop = ["LAT", "LONG_"]
+        # gdf = gdf.drop(columns=columns_to_drop)
+        # gdf['geometry'] = gdf['geometry'].set_crs('epsg:27700')
+        gdf['geometry'] = gdf['geometry'].to_crs('epsg:4326')
+        output_gpkg = "output1.gpkg"
+        gdf.to_file(output_gpkg, driver="GPKG", layer="ee_heat_network_potential")
+
+
+
     def execute(self,filename,h):
         self.filename = filename
         self.dataset_hash = h
         # self.generate_csv_with_geometry()
-        self.generate_geojson_with_geometry()
+        # self.generate_geojson_with_geometry()
         # self.generate_csv_without_geoms()
-        self.generate_geojson_without_geoms()
+        # self.generate_geojson_without_geoms()
+        self.drop_col_from_gpkg()
 
 if __name__== '__main__':
     obj=Transform()
