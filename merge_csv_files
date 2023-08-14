@@ -1,0 +1,11 @@
+import pandas as pd
+
+df1 = pd.read_csv('UKPN_LSOA_Bdry.csv')
+df2 = pd.read_csv('merged_file.csv')
+
+"""
+  Merging csv files on basis of common column present in the file
+"""
+merged_df = pd.merge(df1, df2, on='LSOA11CD', how='inner')
+output_file_path = "UKPN_LSOA_Bdry.csv"
+merged_df.to_csv(output_file_path, index=False)
