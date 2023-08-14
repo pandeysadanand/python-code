@@ -1,0 +1,91 @@
+import psycopg2
+import csv
+
+db_host = 'you host url'
+db_port = '5432'
+db_name = 'postgres'
+db_user = 'your database username'
+db_password = "your database passwor"
+
+def table_exists(cursor, schema_name, table_name):
+    query = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = %s AND table_name = %s)"
+    cursor.execute(query, (schema_name, table_name))
+    return cursor.fetchone()[0]
+
+def fetch_local_authorities():
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password
+        )
+        cursor = conn.cursor()
+
+        query1 = "SELECT name FROM meta.local_authority WHERE dno='ukpn';"
+        cursor.execute(query1)
+        las = cursor.fetchall()  
+        las = [row[0] for row in las]
+
+        return las
+
+    except psycopg2.Error as e:
+        print("Error executing the query:", e)
+    finally:
+        cursor.close()
+        conn.close()
+
+def count_values_for_la(la):
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password
+        )
+        cursor = conn.cursor()
+
+        table_name = 'sgn_gas_topology_converted1'
+        column_name = 'Pressure'
+
+        if not table_exists(cursor, 'ukpn_{}_master'.format(la), '{}_{}'.format(la, table_name)):
+            print("Table doesn't exist for Local Authority:", la)
+            return
+
+        query_template = """
+            SELECT
+              COUNT(*) FILTER (WHERE "{column_name}" = 'IP') AS count_ip,
+              COUNT(*) FILTER (WHERE "{column_name}" = 'MP') AS count_mp,
+              COUNT(*) FILTER (WHERE "{column_name}" = 'LP') AS count_lp,
+              COUNT(*) FILTER (WHERE "{column_name}" = 'HP') AS count_hp
+            FROM ukpn_{la}_master.{la}_{table_name};
+        """
+
+        query = query_template.format(la=la, column_name=column_name, table_name=table_name)
+
+        cursor.execute(query)
+        result = cursor.fetchone()
+
+        # Write the results to a CSV file
+        with open('results.csv', mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([la, table_name, result[0], result[1], result[2], result[3]])
+        conn.commit()
+    except psycopg2.Error as e:
+        print("Error executing the query:", e)
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+if __name__ == "__main__":
+    # Create or overwrite the CSV file with column headers
+    with open('results.csv', mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["la", "table_name", "count_ip", "count_mp", "count_lp", "count_hp"])
+
+    las = fetch_local_authorities()
+    for la in las:
+        count_values_for_la(la)
